@@ -1,0 +1,16 @@
+{
+  "name": "medicine-imagetotext",
+  "version": "1.0.0",
+  "description": "Web-based product identifier using Gemini 2.5 Flash",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js",
+    "dev": "node --watch api/index.js",
+    "vercel:dev": "vercel dev"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^17.3.1",
+    "express": "^4.22.1"
+  }
+}

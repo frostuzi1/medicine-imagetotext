@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Identifier</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Product Identifier</h1>
+      <p class="hint">Capture one image or upload multiple images.</p>
+
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+      <input id="galleryInput" type="file" accept="image/*" multiple hidden />
+
+      <div class="action-row">
+        <button id="captureButton" class="btn">Scan</button>
+        <button id="uploadButton" class="btn secondary-btn" type="button">Upload Multiple</button>
+      </div>
+
+      <section class="preview-card">
+        <div id="previewGrid" class="preview-grid"></div>
+      </section>
+
+      <section class="result-card">
+        <h2>Result</h2>
+        <p id="resultText">No result yet.</p>
+        <button id="copyButton" class="btn copy-btn" type="button">Copy Result</button>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
