@@ -48,7 +48,9 @@ async function handleImageSelection(event) {
     const payload = await response.json();
 
     if (!response.ok) {
-      throw new Error(payload.error || "Identification failed.");
+      const base = payload.error || "Identification failed.";
+      const extra = payload.details ? ` ${payload.details}` : "";
+      throw new Error(`${base}${extra}`);
     }
 
     resultText.textContent = payload.result || "No result returned.";

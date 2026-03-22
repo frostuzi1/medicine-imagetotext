@@ -127,17 +127,58 @@ app.post("/identify", async (req, res) => {
       "Cross-check all images before final output. Count identical separate units of the same product (e.g. 2 same bottles) and use that quantity in the line prefix. Prefer complete medicine lines only; do not output partial/truncated names.",
     ]);
 
-    const text = mergeFormatQuantityPrefixes(normalizeMlUnits(result.response.text()));
+    const response = result.response;
+    const candidates = response?.candidates;
+    if (!candidates || candidates.length === 0) {
+      return res.status(500).json({
+        error:
+          "No text returned from the model (response may be blocked or empty). Try another image or check Gemini API status.",
+      });
+    }
+
+    let rawText;
+    try {
+      rawText = response.text();
+    } catch (textErr) {
+      console.error("Gemini response.text() error:", textErr);
+      return res.status(500).json({
+        error:
+          "Could not read model response. The image may have triggered safety filters—try a clearer product photo.",
+      });
+    }
+
+    const text = mergeFormatQuantityPrefixes(normalizeMlUnits(rawText));
 
     return res.json({ result: text });
   } catch (error) {
     console.error("Gemini API error:", error);
-    if (error && error.status === 429) {
+    const status = error?.status ?? error?.statusCode;
+    const msg = String(error?.message || error || "");
+
+    if (status === 429 || /429|quota|rate limit|Too Many Requests/i.test(msg)) {
       return res.status(429).json({
         error: "Gemini free-tier quota exceeded. Please wait a minute and try again.",
       });
     }
-    return res.status(500).json({ error: "Failed to identify product." });
+
+    if (status === 401 || status === 403 || /API key|API_KEY|permission|PERMISSION_DENIED|401|403/i.test(msg)) {
+      return res.status(500).json({
+        error:
+          "API key rejected or missing on the server. In Vercel: Project → Settings → Environment Variables → add GOOGLE_API_KEY or GEMINI_API_KEY for Production, then Redeploy.",
+      });
+    }
+
+    if (status === 404 || /not found|NOT_FOUND|model/i.test(msg)) {
+      return res.status(500).json({
+        error:
+          "Gemini model not found or not enabled for this API key. Check the model name and Google AI Studio settings.",
+      });
+    }
+
+    return res.status(500).json({
+      error: "Failed to identify product.",
+      details: msg.length > 0 ? msg.slice(0, 280) : undefined,
+    });
   }
 });
 
