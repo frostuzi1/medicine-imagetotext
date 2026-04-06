@@ -97,15 +97,25 @@ app.post("/identify", async (req, res) => {
       });
     }
 
+    const allowedMimeTypes = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
     const imageParts = validImages.map((imageBase64Value) => {
-      const dataUrlMatch = imageBase64Value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-      const mimeType = dataUrlMatch ? dataUrlMatch[1] : "image/jpeg";
-      const base64Data = dataUrlMatch ? dataUrlMatch[2] : imageBase64Value;
+      const trimmed = imageBase64Value.trim();
+      const anyDataUrlMatch = trimmed.match(/^data:([^;]+);base64,(.+)$/i);
+      const mimeType = anyDataUrlMatch ? String(anyDataUrlMatch[1]).toLowerCase() : "image/jpeg";
+      const base64Data = anyDataUrlMatch ? anyDataUrlMatch[2] : trimmed;
+
+      if (!allowedMimeTypes.has(mimeType)) {
+        const unsupportedErr = new Error(
+          `Unsupported image format: ${mimeType}. Please upload JPG, PNG, WEBP, or GIF. On iPhone, set Camera > Formats to Most Compatible.`
+        );
+        unsupportedErr.status = 400;
+        throw unsupportedErr;
+      }
 
       return {
         inlineData: {
           data: base64Data,
-          mimeType,
+          mimeType: mimeType === "image/jpg" ? "image/jpeg" : mimeType,
         },
       };
     });
@@ -154,6 +164,13 @@ app.post("/identify", async (req, res) => {
     console.error("Gemini API error:", error);
     const status = error?.status ?? error?.statusCode;
     const msg = String(error?.message || error || "");
+
+    if (status === 400 || /Unsupported image format|expected pattern|string did not match/i.test(msg)) {
+      return res.status(400).json({
+        error:
+          "Unsupported iPhone image format. Please upload JPG/PNG/WEBP, or set iPhone Camera > Formats > Most Compatible.",
+      });
+    }
 
     if (status === 429 || /429|quota|rate limit|Too Many Requests/i.test(msg)) {
       return res.status(429).json({
