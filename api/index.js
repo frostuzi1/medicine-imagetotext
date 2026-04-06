@@ -4,6 +4,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 
 const app = express();
+let cachedWorkingModel = null;
 
 const systemInstruction =
   'Analyze the product image(s). Return ONLY the text in this format per line: [quantity] [bottle(s)|box(es)] [Brand Name] [Dosage/Size]. If there are multiple medicines, return one line per distinct product. BRAND RULE: Use only the brand/trade name shown on the packaging. Do NOT include generic/active ingredient names. QUANTITY RULES: Count how many separate identical units of the same product appear and use that as the quantity prefix. PACK TYPE RULES: use "bottle/bottles" for liquid volume products in mL, and use "box/boxes" for everything else (including tablet/capsule products). Keep brand names complete and dosage/size complete (mg, mL, g, tabs, etc.) when visible. Always write milliliters as "mL". Do not include packaging words other than box(es)/bottle(s). Example outputs: "5 boxes Foskina 5g", "5 bottles Pecof Syrup 100 mL", "1 box Iberet Active 100 tabs".';
@@ -150,12 +151,15 @@ async function generateWithModelFallback(genAI, modelNames, promptParts) {
         },
       });
       const result = await model.generateContent(promptParts);
+      cachedWorkingModel = modelName;
       return { result, modelName };
     } catch (error) {
       lastError = error;
       const msg = String(error?.message || "");
-      const isNotFound = error?.status === 404 || /not found|NOT_FOUND|model/i.test(msg);
-      if (!isNotFound) {
+      const isModelUnavailable =
+        error?.status === 404 ||
+        /NOT_FOUND|not found|not supported for generateContent|unsupported model|invalid model/i.test(msg);
+      if (!isModelUnavailable) {
         throw error;
       }
     }
@@ -218,9 +222,9 @@ app.post("/identify", async (req, res) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     const preferredModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
     const fallbackModels = [
+      cachedWorkingModel,
       preferredModel,
       "gemini-2.5-flash",
-      "gemini-2.0-flash",
       "gemini-1.5-flash",
     ].filter((v, i, arr) => v && arr.indexOf(v) === i);
     const promptParts = [
@@ -277,7 +281,10 @@ app.post("/identify", async (req, res) => {
       });
     }
 
-    if (status === 404 || /not found|NOT_FOUND|model/i.test(msg)) {
+    if (
+      status === 404 ||
+      /NOT_FOUND|not found|not supported for generateContent|unsupported model|invalid model/i.test(msg)
+    ) {
       return res.status(500).json({
         error:
           "Gemini model not found or not enabled for this API key. Check the model name and Google AI Studio settings.",

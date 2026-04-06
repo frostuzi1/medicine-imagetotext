@@ -33,7 +33,7 @@ async function handleImageSelection(event) {
   if (files.length === 0) return;
 
   try {
-    const dataUrls = await Promise.all(files.map((file) => fileToDataUrl(file)));
+    const dataUrls = await Promise.all(files.map((file) => processFileToUploadDataUrl(file)));
     renderPreviews(dataUrls);
 
     setButtonsDisabled(true);
@@ -73,6 +73,53 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = () => reject(new Error("Unable to read image."));
     reader.readAsDataURL(file);
+  });
+}
+
+function isHeicFile(file) {
+  const type = String(file?.type || "").toLowerCase();
+  const name = String(file?.name || "").toLowerCase();
+  return type.includes("heic") || type.includes("heif") || name.endsWith(".heic") || name.endsWith(".heif");
+}
+
+async function processFileToUploadDataUrl(file) {
+  if (!isHeicFile(file)) {
+    return fileToDataUrl(file);
+  }
+
+  try {
+    return await convertImageFileToJpegDataUrl(file);
+  } catch (_error) {
+    // Fallback to original data URL if browser conversion is unavailable.
+    return fileToDataUrl(file);
+  }
+}
+
+function convertImageFileToJpegDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas context unavailable");
+        ctx.drawImage(img, 0, 0);
+        const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        URL.revokeObjectURL(url);
+        resolve(jpegDataUrl);
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("HEIC conversion failed"));
+    };
+    img.src = url;
   });
 }
 
