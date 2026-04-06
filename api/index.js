@@ -65,6 +65,13 @@ function mergeFormatQuantityPrefixes(value) {
       rest = stripBoxBottlePrefix(line);
     }
 
+    // Ignore OCR fragments like "3", "100", or empty/no-brand lines.
+    const hasLetters = /[a-z]/i.test(rest);
+    const isOnlyNumbersOrSymbols = /^[\d\s./%-]+$/.test(rest);
+    if (!rest || !hasLetters || isOnlyNumbersOrSymbols) {
+      continue;
+    }
+
     const kind = kindFromProductText(rest);
     const key = `${rest.toLowerCase().replace(/\s+/g, " ")}|${kind}`;
     const prev = groups.get(key);
