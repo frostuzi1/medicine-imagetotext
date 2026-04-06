@@ -97,7 +97,15 @@ app.post("/identify", async (req, res) => {
       });
     }
 
-    const allowedMimeTypes = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
+    const allowedMimeTypes = new Set([
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/heic",
+      "image/heif",
+    ]);
     const imageParts = validImages.map((imageBase64Value) => {
       const trimmed = imageBase64Value.trim();
       const anyDataUrlMatch = trimmed.match(/^data:([^;]+);base64,(.+)$/i);
@@ -106,7 +114,7 @@ app.post("/identify", async (req, res) => {
 
       if (!allowedMimeTypes.has(mimeType)) {
         const unsupportedErr = new Error(
-          `Unsupported image format: ${mimeType}. Please upload JPG, PNG, WEBP, or GIF. On iPhone, set Camera > Formats to Most Compatible.`
+          `Unsupported image format: ${mimeType}. Please upload JPG, PNG, WEBP, GIF, HEIC, or HEIF.`
         );
         unsupportedErr.status = 400;
         throw unsupportedErr;
@@ -168,7 +176,7 @@ app.post("/identify", async (req, res) => {
     if (status === 400 || /Unsupported image format|expected pattern|string did not match/i.test(msg)) {
       return res.status(400).json({
         error:
-          "Unsupported iPhone image format. Please upload JPG/PNG/WEBP, or set iPhone Camera > Formats > Most Compatible.",
+          "Unsupported image format. Please upload JPG/PNG/WEBP/GIF/HEIC/HEIF.",
       });
     }
 
