@@ -76,6 +76,34 @@ function mergeFormatQuantityPrefixes(value) {
     .join("\n");
 }
 
+async function generateWithModelFallback(genAI, modelNames, promptParts) {
+  let lastError;
+  for (const modelName of modelNames) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction,
+        generationConfig: {
+          responseMimeType: "text/plain",
+          temperature: 0,
+          topP: 0.1,
+          maxOutputTokens: 512,
+        },
+      });
+      const result = await model.generateContent(promptParts);
+      return { result, modelName };
+    } catch (error) {
+      lastError = error;
+      const msg = String(error?.message || "");
+      const isNotFound = error?.status === 404 || /not found|NOT_FOUND|model/i.test(msg);
+      if (!isNotFound) {
+        throw error;
+      }
+    }
+  }
+  throw lastError || new Error("No available Gemini model succeeded.");
+}
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
 
@@ -129,21 +157,18 @@ app.post("/identify", async (req, res) => {
     });
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-3.1-flash-lite-preview",
-      systemInstruction,
-      generationConfig: {
-        responseMimeType: "text/plain",
-        temperature: 0,
-        topP: 0.1,
-        maxOutputTokens: 512,
-      },
-    });
-
-    const result = await model.generateContent([
+    const preferredModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const fallbackModels = [
+      preferredModel,
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+    ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+    const promptParts = [
       ...imageParts,
       "Cross-check all images before final output. Count identical separate units of the same product (e.g. 2 same bottles) and use that quantity in the line prefix. Prefer complete medicine lines only; do not output partial/truncated names.",
-    ]);
+    ];
+    const { result } = await generateWithModelFallback(genAI, fallbackModels, promptParts);
 
     const response = result.response;
     const candidates = response?.candidates;
