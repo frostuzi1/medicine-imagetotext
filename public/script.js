@@ -3,6 +3,7 @@ const galleryInput = document.getElementById("galleryInput");
 const captureButton = document.getElementById("captureButton");
 const uploadButton = document.getElementById("uploadButton");
 const copyButton = document.getElementById("copyButton");
+const clearButton = document.getElementById("clearButton");
 const previewGrid = document.getElementById("previewGrid");
 const resultText = document.getElementById("resultText");
 const defaultButtonLabel = "Scan";
@@ -25,6 +26,7 @@ uploadButton.addEventListener("click", () => {
 cameraInput.addEventListener("change", handleImageSelection);
 galleryInput.addEventListener("change", handleImageSelection);
 copyButton.addEventListener("click", handleCopyResult);
+clearButton.addEventListener("click", handleClearResult);
 
 async function handleImageSelection(event) {
   const files = Array.from(event.target.files || []);
@@ -35,7 +37,7 @@ async function handleImageSelection(event) {
     renderPreviews(dataUrls);
 
     setButtonsDisabled(true);
-    resultText.textContent = "Identifying...";
+    const previousResult = getCurrentResultLines();
 
     const response = await fetch("/identify", {
       method: "POST",
@@ -53,7 +55,9 @@ async function handleImageSelection(event) {
       throw new Error(`${base}${extra}`);
     }
 
-    resultText.textContent = payload.result || "No result returned.";
+    const incomingResult = payload.result || "No result returned.";
+    const mergedResult = mergeUniqueResultLines(previousResult, incomingResult);
+    resultText.textContent = mergedResult || "No result yet.";
   } catch (error) {
     resultText.textContent = `Error: ${error.message}`;
   } finally {
@@ -115,6 +119,34 @@ function startCooldown() {
     setButtonsDisabled(false);
     captureButton.textContent = defaultButtonLabel;
   }, COOLDOWN_MS);
+}
+
+function handleClearResult() {
+  resultText.textContent = "No result yet.";
+}
+
+function getCurrentResultLines() {
+  const text = resultText.textContent ? resultText.textContent.trim() : "";
+  if (!text || text === "No result yet.") return "";
+  if (text.startsWith("Error:")) return "";
+  return text;
+}
+
+function mergeUniqueResultLines(existingText, incomingText) {
+  const combinedLines = `${existingText}\n${incomingText}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const seen = new Set();
+  const uniqueLines = [];
+  for (const line of combinedLines) {
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueLines.push(line);
+  }
+  return uniqueLines.join("\n");
 }
 
 function renderPreviews(dataUrls) {

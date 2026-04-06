@@ -57,6 +57,11 @@ h1 {
   background: #1f2937;
 }
 
+.clear-btn {
+  margin-top: 10px;
+  background: #b91c1c;
+}
+
 .preview-card,
 .result-card {
   margin-top: 16px;
