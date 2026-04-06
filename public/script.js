@@ -31,6 +31,7 @@ clearButton.addEventListener("click", handleClearResult);
 async function handleImageSelection(event) {
   const files = Array.from(event.target.files || []);
   if (files.length === 0) return;
+  let cooldownMs = COOLDOWN_MS;
 
   try {
     const dataUrls = await Promise.all(files.map((file) => processFileToUploadDataUrl(file)));
@@ -50,6 +51,9 @@ async function handleImageSelection(event) {
     const payload = await response.json();
 
     if (!response.ok) {
+      if (response.status === 429 && Number.isFinite(payload.retryAfterSec)) {
+        cooldownMs = Math.max(COOLDOWN_MS, payload.retryAfterSec * 1000);
+      }
       const base = payload.error || "Identification failed.";
       const extra = payload.details ? ` ${payload.details}` : "";
       throw new Error(`${base}${extra}`);
@@ -61,7 +65,7 @@ async function handleImageSelection(event) {
   } catch (error) {
     resultText.textContent = `Error: ${error.message}`;
   } finally {
-    startCooldown();
+    startCooldown(cooldownMs);
     cameraInput.value = "";
     galleryInput.value = "";
   }
@@ -150,7 +154,7 @@ async function handleCopyResult() {
   }, 1200);
 }
 
-function startCooldown() {
+function startCooldown(durationMs = COOLDOWN_MS) {
   if (cooldownTimeoutId) {
     clearTimeout(cooldownTimeoutId);
     cooldownTimeoutId = null;
@@ -165,7 +169,7 @@ function startCooldown() {
     isCooldownActive = false;
     setButtonsDisabled(false);
     captureButton.textContent = defaultButtonLabel;
-  }, COOLDOWN_MS);
+  }, durationMs);
 }
 
 function handleClearResult() {

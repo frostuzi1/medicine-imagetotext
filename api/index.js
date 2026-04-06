@@ -112,6 +112,22 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function extractRetryAfterSeconds(error, fallbackMsg) {
+  const details = Array.isArray(error?.errorDetails) ? error.errorDetails : [];
+  for (const detail of details) {
+    const retryDelay = detail?.retryDelay;
+    if (typeof retryDelay === "string") {
+      const secMatch = retryDelay.match(/(\d+)s/i);
+      if (secMatch) return parseInt(secMatch[1], 10);
+    }
+  }
+
+  const text = String(fallbackMsg || "");
+  const secMatch = text.match(/retry in\s+(\d+(?:\.\d+)?)s/i);
+  if (secMatch) return Math.ceil(parseFloat(secMatch[1]));
+  return null;
+}
+
 function stripGenericNameFragments(value) {
   const lines = cleanModelText(value)
     .split(/\r?\n/)
@@ -220,11 +236,13 @@ app.post("/identify", async (req, res) => {
     });
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const preferredModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    // Use a broadly available default model for better cross-project reliability.
+    const preferredModel = process.env.GEMINI_MODEL || "gemini-1.5-flash";
     const fallbackModels = [
       cachedWorkingModel,
       preferredModel,
       "gemini-2.5-flash",
+      "gemini-2.0-flash",
       "gemini-1.5-flash",
     ].filter((v, i, arr) => v && arr.indexOf(v) === i);
     const promptParts = [
@@ -269,8 +287,12 @@ app.post("/identify", async (req, res) => {
     }
 
     if (status === 429 || /429|quota|rate limit|Too Many Requests/i.test(msg)) {
+      const retryAfterSec = extractRetryAfterSeconds(error, msg);
       return res.status(429).json({
-        error: "Gemini free-tier quota exceeded. Please wait a minute and try again.",
+        error: retryAfterSec
+          ? `Gemini free-tier quota exceeded. Please wait about ${retryAfterSec}s and try again.`
+          : "Gemini free-tier quota exceeded. Please wait a minute and try again.",
+        retryAfterSec: retryAfterSec || undefined,
       });
     }
 
@@ -287,7 +309,7 @@ app.post("/identify", async (req, res) => {
     ) {
       return res.status(500).json({
         error:
-          "Gemini model not found or not enabled for this API key. Check the model name and Google AI Studio settings.",
+          "Gemini model not found or not enabled for this API key. Set GEMINI_MODEL to an enabled model (recommended: gemini-1.5-flash or gemini-2.5-flash) in Vercel env vars, then redeploy.",
       });
     }
 
