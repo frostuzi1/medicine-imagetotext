@@ -6,7 +6,7 @@ require("dotenv").config();
 const app = express();
 
 const systemInstruction =
-  'Analyze the product image(s). Return ONLY the text in this format per line: [quantity] [box or boxes or bottle or bottles] [Product Name] [Flavor] [Dosage/Size] [Pack contents]. QUANTITY RULES: Count how many separate identical units of the same product appear (e.g. two of the same bottle side by side, or two identical boxes). Use that count as the quantity prefix: "2 bottles ..." or "2 boxes ...". Use "1 bottle" / "1 box" when only one unit is visible. If multiple different medicines appear, use one line per distinct product. PREFIX TYPE: Use "bottle"/"bottles" when the product volume is in mL (liquids/syrups). Use "box"/"boxes" when strength is in mg (typical tablets/capsules), or when neither mg nor mL appears. If both mg and mL appear, prefer "bottle(s)" when mL is the product volume. STRICT RULES: Do not use other packaging words (blister, sachet). If a flavor is visible, include it right after the product name using the word "Flavor" (for example: "Orange Flavor", "Menthol Flavor"). If no flavor is found, skip flavor entirely and do not write "No Flavor". Keep medicine names complete and do not truncate words. Keep dosage/size complete and include full units (mg, mL, g, IU, etc.) when visible—always write milliliters as "mL", never "ml". When the label shows how many capsules, tablets, softgels, or similar units are in the pack, include that at the end (for example: "30 capsules", "60 softgels", "100 tablets"). If pack count is not visible, omit it—do not guess or write "unknown". Use all provided images to complete missing text before answering. When text is partially visible, infer only when strongly supported by at least one other image; otherwise omit that medicine line instead of returning incomplete text. Example outputs: "1 bottle Scott\'s Emulsion Orange Flavor 200 mL" or "2 bottles Scott\'s Emulsion Orange Flavor 200 mL" or "2 boxes Panadol Menthol Flavor 500mg 30 tablets".';
+  'Analyze the product image(s). Return ONLY the text in this format per line: [quantity] [pcs|bottle(s)|box(es)] [Product Name] [Dosage/Size]. If there are multiple medicines, return one line per distinct product. QUANTITY RULES: Count how many separate identical units of the same product appear and use that as the quantity prefix. PACK TYPE RULES: use "bottle/bottles" for liquid volume products in mL, use "box/boxes" for tablet/capsule products, and use "pc/pcs" for other products. Keep medicine names complete and dosage/size complete (mg, mL, g, tabs, etc.) when visible. Always write milliliters as "mL". Do not include packaging words other than pcs/box(es)/bottle(s). Example outputs: "5 pcs Foskina 5g", "5 bottles Pecof Syrup 100 mL", "1 box Iberet Active 100 tabs".';
 
 function cleanModelText(value) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
@@ -21,14 +21,17 @@ function normalizeMlUnits(value) {
 function stripBoxBottlePrefix(line) {
   return String(line || "")
     .trim()
-    .replace(/^\d+\s+(box|boxes|bottle|bottles)\s+/i, "")
-    .replace(/^(box|boxes|bottle|bottles)\s+/i, "")
+    .replace(/^\d+\s+(pc|pcs|box|boxes|bottle|bottles)\s+/i, "")
+    .replace(/^(pc|pcs|box|boxes|bottle|bottles)\s+/i, "")
     .trim();
 }
 
 function kindFromProductText(rest) {
   const hasMl = /\d+\s*mL\b/i.test(rest);
-  return hasMl ? "bottle" : "box";
+  const hasTabsOrCaps = /\b(tab|tabs|tablet|tablets|capsule|capsules|softgel|softgels)\b/i.test(rest);
+  if (hasMl) return "bottle";
+  if (hasTabsOrCaps) return "box";
+  return "pcs";
 }
 
 function formatQtyKind(qty, kind) {
@@ -36,7 +39,10 @@ function formatQtyKind(qty, kind) {
   if (kind === "bottle") {
     return n === 1 ? "1 bottle" : `${n} bottles`;
   }
-  return n === 1 ? "1 box" : `${n} boxes`;
+  if (kind === "box") {
+    return n === 1 ? "1 box" : `${n} boxes`;
+  }
+  return n === 1 ? "1 pc" : `${n} pcs`;
 }
 
 /**
@@ -53,7 +59,7 @@ function mergeFormatQuantityPrefixes(value) {
   for (const line of rawLines) {
     let qty = 1;
     let rest = line;
-    const numbered = line.match(/^(\d+)\s+(box|boxes|bottle|bottles)\s+(.+)$/i);
+    const numbered = line.match(/^(\d+)\s+(pc|pcs|box|boxes|bottle|bottles)\s+(.+)$/i);
     if (numbered) {
       qty = parseInt(numbered[1], 10) || 1;
       rest = numbered[3].trim();
