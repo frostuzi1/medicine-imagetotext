@@ -6,7 +6,7 @@ require("dotenv").config();
 const app = express();
 
 const systemInstruction =
-  'Analyze the product image(s). Return ONLY the text in this format per line: [quantity] [pcs|bottle(s)|box(es)] [Product Name] [Dosage/Size]. If there are multiple medicines, return one line per distinct product. QUANTITY RULES: Count how many separate identical units of the same product appear and use that as the quantity prefix. PACK TYPE RULES: use "bottle/bottles" for liquid volume products in mL, use "box/boxes" for tablet/capsule products, and use "pc/pcs" for other products. Keep medicine names complete and dosage/size complete (mg, mL, g, tabs, etc.) when visible. Always write milliliters as "mL". Do not include packaging words other than pcs/box(es)/bottle(s). Example outputs: "5 pcs Foskina 5g", "5 bottles Pecof Syrup 100 mL", "1 box Iberet Active 100 tabs".';
+  'Analyze the product image(s). Return ONLY the text in this format per line: [quantity] [bottle(s)|box(es)] [Brand Name] [Dosage/Size]. If there are multiple medicines, return one line per distinct product. BRAND RULE: Use only the brand/trade name shown on the packaging. Do NOT include generic/active ingredient names. QUANTITY RULES: Count how many separate identical units of the same product appear and use that as the quantity prefix. PACK TYPE RULES: use "bottle/bottles" for liquid volume products in mL, and use "box/boxes" for everything else (including tablet/capsule products). Keep brand names complete and dosage/size complete (mg, mL, g, tabs, etc.) when visible. Always write milliliters as "mL". Do not include packaging words other than box(es)/bottle(s). Example outputs: "5 boxes Foskina 5g", "5 bottles Pecof Syrup 100 mL", "1 box Iberet Active 100 tabs".';
 
 function cleanModelText(value) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
@@ -21,17 +21,15 @@ function normalizeMlUnits(value) {
 function stripBoxBottlePrefix(line) {
   return String(line || "")
     .trim()
-    .replace(/^\d+\s+(pc|pcs|box|boxes|bottle|bottles)\s+/i, "")
-    .replace(/^(pc|pcs|box|boxes|bottle|bottles)\s+/i, "")
+    .replace(/^\d+\s+(box|boxes|bottle|bottles)\s+/i, "")
+    .replace(/^(box|boxes|bottle|bottles)\s+/i, "")
     .trim();
 }
 
 function kindFromProductText(rest) {
   const hasMl = /\d+\s*mL\b/i.test(rest);
-  const hasTabsOrCaps = /\b(tab|tabs|tablet|tablets|capsule|capsules|softgel|softgels)\b/i.test(rest);
   if (hasMl) return "bottle";
-  if (hasTabsOrCaps) return "box";
-  return "pcs";
+  return "box";
 }
 
 function formatQtyKind(qty, kind) {
@@ -42,7 +40,7 @@ function formatQtyKind(qty, kind) {
   if (kind === "box") {
     return n === 1 ? "1 box" : `${n} boxes`;
   }
-  return n === 1 ? "1 pc" : `${n} pcs`;
+  return n === 1 ? "1 box" : `${n} boxes`;
 }
 
 /**
@@ -59,7 +57,7 @@ function mergeFormatQuantityPrefixes(value) {
   for (const line of rawLines) {
     let qty = 1;
     let rest = line;
-    const numbered = line.match(/^(\d+)\s+(pc|pcs|box|boxes|bottle|bottles)\s+(.+)$/i);
+    const numbered = line.match(/^(\d+)\s+(box|boxes|bottle|bottles)\s+(.+)$/i);
     if (numbered) {
       qty = parseInt(numbered[1], 10) || 1;
       rest = numbered[3].trim();
@@ -79,6 +77,54 @@ function mergeFormatQuantityPrefixes(value) {
 
   return Array.from(groups.values())
     .map(({ qty, kind, rest }) => `${formatQtyKind(qty, kind)} ${rest}`)
+    .join("\n");
+}
+
+const GENERIC_NAME_PHRASES = [
+  "cefuroxime axetil",
+  "paracetamol",
+  "ibuprofen",
+  "amoxicillin",
+  "azithromycin",
+  "ciprofloxacin",
+  "metformin",
+  "omeprazole",
+  "cetirizine",
+  "loratadine",
+  "salbutamol",
+  "dextromethorphan",
+  "guaifenesin",
+  "phenylephrine",
+  "diphenhydramine",
+  "hydrochloride",
+  "hcl",
+];
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripGenericNameFragments(value) {
+  const lines = cleanModelText(value)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  return lines
+    .map((line) => {
+      const prefixMatch = line.match(/^(\d+\s+(?:box|boxes|bottle|bottles)\s+)/i);
+      const prefix = prefixMatch ? prefixMatch[1] : "";
+      let body = prefix ? line.slice(prefix.length) : line;
+
+      for (const phrase of GENERIC_NAME_PHRASES) {
+        const pattern = new RegExp(`\\b${escapeRegExp(phrase)}\\b`, "ig");
+        body = body.replace(pattern, " ");
+      }
+
+      body = body.replace(/\(\s*\)/g, " ").replace(/\s{2,}/g, " ").trim();
+      return `${prefix}${body}`.trim();
+    })
+    .filter((line) => line.length > 0)
     .join("\n");
 }
 
@@ -196,7 +242,7 @@ app.post("/identify", async (req, res) => {
       });
     }
 
-    const text = mergeFormatQuantityPrefixes(normalizeMlUnits(rawText));
+    const text = mergeFormatQuantityPrefixes(stripGenericNameFragments(normalizeMlUnits(rawText)));
 
     return res.json({ result: text });
   } catch (error) {
