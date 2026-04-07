@@ -7,22 +7,24 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <main class="app">
-      <h1>Product Identifier</h1>
-      <p class="hint">Capture one image or upload multiple images.</p>
+    <div class="layout">
+      <main class="app">
+        <h1>Product Identifier</h1>
+        <p class="hint">Capture one image or upload multiple images.</p>
 
-      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
-      <input id="galleryInput" type="file" accept="image/*" multiple hidden />
+        <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+        <input id="galleryInput" type="file" accept="image/*" multiple hidden />
 
-      <div class="action-row">
-        <button id="captureButton" class="btn">Scan</button>
-        <button id="uploadButton" class="btn secondary-btn" type="button">Upload Multiple</button>
-      </div>
+        <div class="action-row">
+          <button id="captureButton" class="btn">Scan</button>
+          <button id="uploadButton" class="btn secondary-btn" type="button">Upload Multiple</button>
+        </div>
 
-      <section class="preview-card">
-        <div id="previewGrid" class="preview-grid"></div>
-      </section>
+        <section class="preview-card">
+          <div id="previewGrid" class="preview-grid"></div>
+        </section>
 
+<<<<<<< HEAD
       <section class="result-card">
         <h2>Result</h2>
         <p id="resultText">No result yet.</p>
@@ -30,6 +32,22 @@
         <button id="clearButton" class="btn clear-btn" type="button">Clear Result</button>
       </section>
     </main>
+=======
+        <section class="result-card">
+          <h2>Result</h2>
+          <p id="resultText">No result yet.</p>
+          <button id="copyButton" class="btn copy-btn" type="button">Copy Result</button>
+          <button id="clearButton" class="btn clear-btn" type="button">Clear Result</button>
+        </section>
+      </main>
+
+      <aside class="status-panel">
+        <h2>AI Detector Status</h2>
+        <p id="detectorState" class="status-pill">Checking...</p>
+        <p id="detectorMessage" class="status-message">Connecting to server...</p>
+      </aside>
+    </div>
+>>>>>>> 9ce55e1 (UI updates)
 
     <script src="script.js"></script>
   </body>

@@ -6,13 +6,18 @@ const copyButton = document.getElementById("copyButton");
 const clearButton = document.getElementById("clearButton");
 const previewGrid = document.getElementById("previewGrid");
 const resultText = document.getElementById("resultText");
+const detectorState = document.getElementById("detectorState");
+const detectorMessage = document.getElementById("detectorMessage");
 const defaultButtonLabel = "Scan";
 const defaultCopyLabel = "Copy Result";
 const COOLDOWN_MS = 3000;
 let cooldownTimeoutId = null;
 let isCooldownActive = false;
+let lastQuotaUntilMs = 0;
 captureButton.textContent = defaultButtonLabel;
 copyButton.textContent = defaultCopyLabel;
+pollDetectorStatus();
+setInterval(pollDetectorStatus, 5000);
 
 captureButton.addEventListener("click", () => {
   if (isCooldownActive) return;
@@ -39,6 +44,8 @@ async function handleImageSelection(event) {
 
     setButtonsDisabled(true);
     const previousResult = getCurrentResultLines();
+    resultText.textContent = "Identifying...";
+    setDetectorStatusUi("scanning", "Scanning in progress...");
 
     const response = await fetch("/identify", {
       method: "POST",
@@ -64,6 +71,9 @@ async function handleImageSelection(event) {
     resultText.textContent = mergedResult || "No result yet.";
   } catch (error) {
     resultText.textContent = `Error: ${error.message}`;
+    if (String(error.message || "").toLowerCase().includes("quota")) {
+      lastQuotaUntilMs = Date.now() + 60000;
+    }
   } finally {
     startCooldown(cooldownMs);
     cameraInput.value = "";
@@ -87,21 +97,17 @@ function isHeicFile(file) {
 }
 
 async function processFileToUploadDataUrl(file) {
-  if (!isHeicFile(file)) {
-    return fileToDataUrl(file);
-  }
-
+  if (!isHeicFile(file)) return fileToDataUrl(file);
   try {
     return await convertImageFileToJpegDataUrl(file);
   } catch (_error) {
-    // Fallback to original data URL if browser conversion is unavailable.
     return fileToDataUrl(file);
   }
 }
 
 function convertImageFileToJpegDataUrl(file) {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       try {
@@ -109,21 +115,21 @@ function convertImageFileToJpegDataUrl(file) {
         canvas.width = img.naturalWidth || img.width;
         canvas.height = img.naturalHeight || img.height;
         const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Canvas context unavailable");
+        if (!ctx) throw new Error("Canvas unavailable");
         ctx.drawImage(img, 0, 0);
         const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.92);
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(objectUrl);
         resolve(jpegDataUrl);
       } catch (err) {
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(objectUrl);
         reject(err);
       }
     };
     img.onerror = () => {
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(objectUrl);
       reject(new Error("HEIC conversion failed"));
     };
-    img.src = url;
+    img.src = objectUrl;
   });
 }
 
@@ -198,6 +204,48 @@ function mergeUniqueResultLines(existingText, incomingText) {
     uniqueLines.push(line);
   }
   return uniqueLines.join("\n");
+}
+
+async function pollDetectorStatus() {
+  try {
+    const response = await fetch("/detector-status", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const state = payload?.state || "ready";
+    let message = payload?.message || "";
+
+    if (state === "quota_limited") {
+      const now = Date.now();
+      if (lastQuotaUntilMs <= now) {
+        lastQuotaUntilMs = now + (Number(payload?.retryAfterSec) || 60) * 1000;
+      }
+      const secondsLeft = Math.max(0, Math.ceil((lastQuotaUntilMs - now) / 1000));
+      message = `Quota exceeded. Retry in about ${secondsLeft}s.`;
+      if (secondsLeft === 0) {
+        message = "Quota window likely reset. You can try scanning now.";
+      }
+    } else if (state === "ready") {
+      lastQuotaUntilMs = 0;
+    }
+
+    setDetectorStatusUi(state, message);
+  } catch (_error) {
+    setDetectorStatusUi("error", "Status unavailable (server unreachable).");
+  }
+}
+
+function setDetectorStatusUi(state, message) {
+  detectorState.className = `status-pill status-${state}`;
+  detectorState.textContent = formatStateLabel(state);
+  detectorMessage.textContent = message || "";
+}
+
+function formatStateLabel(state) {
+  if (state === "ready") return "Ready";
+  if (state === "scanning") return "Scanning";
+  if (state === "quota_limited") return "Quota Limited";
+  if (state === "error") return "Error";
+  return "Unknown";
 }
 
 function renderPreviews(dataUrls) {
